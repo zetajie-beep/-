@@ -1,5 +1,10 @@
 # Portfolio CMS setup
 
+> The production owner route is `/?studio=1`. It requires a configured Supabase
+> project and an authenticated administrator. Local development without cloud
+> configuration still supports a separate local preview; see
+> [LOCAL_EDITOR.md](./LOCAL_EDITOR.md). Local saves never update the public site.
+
 This project uses Supabase as a small, single-document CMS. The public site reads
 one published JSON document; the admin UI edits one private draft and publishes
 it through an atomic database function.
@@ -165,6 +170,10 @@ if (error) throw error
 
 Keep the current local content as a render fallback for network failures. The
 published response can also be cached because it changes only after a publish.
+The public loader releases the opening after 1.6 seconds if the request is slow,
+but still applies a successful cloud response when it arrives. It aborts stalled
+requests after 12 seconds and cancels updates on unmount. Publishing changes
+content in Supabase; visitors receive it on their next page load or refresh.
 
 ## 5. Admin draft workflow
 
@@ -267,6 +276,11 @@ data to this bucket. Remove abandoned assets periodically from the Storage
 dashboard.
 
 ## 7. Production routing
+
+Production loads OwnerStudio lazily on the owner route. Without cloud
+configuration it shows setup guidance, not editable controls. With configuration
+it requires login and the server-managed admin claim. Never enable the local
+development authentication bypass in a production build.
 
 Use `https://YOUR_DOMAIN/?studio=1` as the portable owner URL. It works on static
 hosts without a rewrite rule. The cleaner `/studio` alias is also supported; to

@@ -11,17 +11,19 @@ import {
   Copy,
   Menu,
   Pencil,
-  Settings2,
+  UserRound,
   X,
 } from 'lucide-react'
 import BorderGlow from './components/BorderGlow'
 import defaultSiteContent from './content/defaultContent'
 import { loadPublishedContent } from './cms/client'
+import { canUseLocalEditor, isEditorRoute } from './cms/access'
 import { getProjectCardImage, MAX_PROJECT_IMAGES } from './content/projectMedia'
 
 gsap.registerPlugin(ScrollTrigger)
 
 const Antigravity = lazy(() => import('./components/Antigravity'))
+// The online owner route loads the editor lazily; Auth and database RLS gate edits.
 const OwnerStudio = lazy(() => import('./cms/OwnerStudio'))
 
 const borderGlowColors = ['#B7F34A', '#E7FFB5', '#73D982']
@@ -404,7 +406,7 @@ function useSiteMotion(scopeRef, editorMode = false, contentReady = true) {
   }, [contentReady, editorMode, scopeRef])
 }
 
-function Header({ scrolled, content }) {
+function Header({ scrolled, content, showStudio = false }) {
   const navItems = content.navItems || []
   const email = content.email || ''
   const logoMask = content.logoPath ? `url(${JSON.stringify(content.logoPath)})` : undefined
@@ -536,14 +538,16 @@ function Header({ scrolled, content }) {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <a
-              className="nav-studio-link"
-              href="/?studio=1"
-              aria-label="进入内容后台登录入口"
-              title="内容后台"
-            >
-              <Settings2 aria-hidden="true" />
-            </a>
+            {showStudio && (
+              <a
+                className="nav-studio-link"
+                href="/?studio=1"
+                aria-label="进入管理员后台"
+                title="管理员后台"
+              >
+                <UserRound aria-hidden="true" />
+              </a>
+            )}
 
             <a
               className="accent-button hidden min-h-11 items-center bg-[#B7F34A] px-5 py-2 text-sm font-medium text-black md:inline-flex"
@@ -2004,8 +2008,8 @@ function Contact({ content, globalContent }) {
 }
 
 export default function App() {
-  const studioPath = window.location.pathname.replace(/\/+$/, '') === '/studio'
-  const studioMode = studioPath || new URLSearchParams(window.location.search).get('studio') === '1'
+  const localEditorAvailable = canUseLocalEditor()
+  const studioMode = isEditorRoute(window.location)
   const siteRef = useRef(null)
   const progressRef = useRef(null)
   const scrolled = useScrollState(progressRef)
@@ -2020,13 +2024,21 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     if (studioMode) return () => { cancelled = true }
-    loadPublishedContent(defaultSiteContent).then((snapshot) => {
+    const controller = new AbortController()
+    const applySnapshot = (snapshot) => {
       if (cancelled) return
       setSiteContent(snapshot.content)
       setPublishedRevision(snapshot.revision)
       setContentReady(true)
-    })
-    return () => { cancelled = true }
+    }
+    loadPublishedContent(defaultSiteContent, {
+      onUpdate: applySnapshot,
+      signal: controller.signal,
+    }).then(applySnapshot)
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [])
 
   useEffect(() => {
@@ -2070,7 +2082,7 @@ export default function App() {
         跳到主要内容
       </a>
       <div className="scroll-progress" ref={progressRef} aria-hidden="true" />
-      <Header scrolled={scrolled} content={siteContent.global} />
+      <Header scrolled={scrolled} content={siteContent.global} showStudio={localEditorAvailable || ownerState.isOwner} />
       <main id="main-content">
         <Hero content={siteContent.hero} />
         <Work content={siteContent.work} onOpen={openProject} isModalOpen={Boolean(activeProject)} />

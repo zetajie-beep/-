@@ -429,7 +429,7 @@ function LoginPanel({ onSignedIn, initialError = '' }) {
       <div className="cms-gate__panel">
         <p className="cms-eyebrow">OWNER STUDIO</p>
         <h1 id="cms-login-title">进入内容工作室</h1>
-        <p>此入口只供站点所有者使用。公开访客不会看到编辑功能。</p>
+        <p>仅限站点管理员登录，不开放注册。验证通过后才可编辑、上传图片和发布内容。</p>
         <form onSubmit={submit}>
           <label>
             <span>管理员邮箱</span>

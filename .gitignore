@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.vite/
+.vercel/
+.DS_Store
+*.log
+
+# Never commit credentials. The example contains public configuration names only.
+.env
+.env.*
+!.env.example
+.npmrc
+supabase/.temp/
+supabase/.branches/
+.vercel
+.env*

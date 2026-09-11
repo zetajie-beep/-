@@ -1,4 +1,6 @@
 import { CMS_CONFIG, CMS_ENV_KEYS } from './config.js'
+import { canUseLocalEditor } from './access.js'
+import { loadWithFallback } from './publishedLoader.js'
 import { assertProjectMedia, normalizeProjectMedia } from '../content/projectMedia.js'
 
 const env = import.meta.env ?? {}
@@ -60,13 +62,8 @@ function isSafePublishableKey(value) {
   }
 }
 
-function isLoopbackBrowser() {
-  if (typeof window === 'undefined') return false
-  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
-}
-
 export function isLocalStudioMode() {
-  return Boolean(import.meta.env.DEV) && isLoopbackBrowser() && !isCmsConfigured()
+  return canUseLocalEditor() && !isCmsConfigured()
 }
 
 function readLocalStudioRecord(key) {
@@ -268,7 +265,7 @@ export async function getCmsClient() {
   return clientPromise
 }
 
-export async function loadPublishedContent(defaultContent) {
+export async function loadPublishedContent(defaultContent, { onUpdate, signal } = {}) {
   if (isLocalStudioMode()) {
     const localPublished = readLocalStudioRecord(LOCAL_STUDIO_KEYS.published)
     if (!localPublished?.content) {
@@ -284,35 +281,30 @@ export async function loadPublishedContent(defaultContent) {
 
   if (!isCmsConfigured()) return { content: defaultContent, revision: 0, needsBootstrap: false }
 
-  try {
-    const client = await getCmsClient()
-    const query = client
-      .from(CMS_CONFIG.published.table)
-      .select('content, revision')
-      .eq('id', CMS_CONFIG.published.id)
-      .maybeSingle()
-    let timeoutId
-    const timeout = new Promise((_, reject) => {
-      timeoutId = globalThis.setTimeout(
-        () => reject(new CmsClientError('CMS_READ_TIMEOUT', '发布内容读取超时。')),
-        1600,
-      )
-    })
-    const { data, error } = await Promise.race([query, timeout])
-      .finally(() => globalThis.clearTimeout(timeoutId))
+  const fallback = { content: defaultContent, revision: 0, needsBootstrap: false }
+  return loadWithFallback(async (requestSignal) => {
+    try {
+      const client = await getCmsClient()
+      if (requestSignal.aborted) return fallback
+      const { data, error } = await client
+        .from(CMS_CONFIG.published.table)
+        .select('content, revision')
+        .eq('id', CMS_CONFIG.published.id)
+        .abortSignal(requestSignal)
+        .maybeSingle()
 
-    if (error) throw error
-    const normalized = normalizeContentDocument(data?.content, defaultContent)
-    return {
-      content: normalized.content,
-      revision: Number.isSafeInteger(data?.revision) ? data.revision : 0,
-      needsBootstrap: normalized.needsBootstrap,
+      if (error) throw error
+      const normalized = normalizeContentDocument(data?.content, defaultContent)
+      return {
+        content: normalized.content,
+        revision: Number.isSafeInteger(data?.revision) ? data.revision : 0,
+        needsBootstrap: normalized.needsBootstrap,
+      }
+    } catch (error) {
+      if (!requestSignal.aborted) console.warn('[CMS] 暂时无法读取云端发布内容。', error)
+      throw error
     }
-  } catch (error) {
-    // The public portfolio must remain usable when the optional CMS is offline.
-    console.warn('[CMS] 已回退到本地发布内容。', error)
-    return { content: defaultContent, revision: 0, needsBootstrap: false }
-  }
+  }, fallback, { onUpdate, signal })
 }
 
 export async function getOwnerSession() {
